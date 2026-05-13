@@ -436,4 +436,4 @@ if __name__ == "__main__":
     print("  Status API:     GET  http://localhost:5000/v1/status?DeviceId=<id>")
     print("  Alert receiver: POST http://localhost:5000/v1/alert")
     print("  Update receiver:POST http://localhost:5000/v1/update")
-    app.run(debug=True, port=5000, threaded=True)
+    app.run(host="0.0.0.0", port=5000, threaded=True)
