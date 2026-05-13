@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WWVDS SunGuide Protocol Simulator</title>
+<style>
+/* ── Reset & base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --navy:    #0d1b2a;
+  --navy2:   #1b2a3b;
+  --navy3:   #243447;
+  --blue:    #1565c0;
+  --blue2:   #1976d2;
+  --blue3:   #42a5f5;
+  --teal:    #00838f;
+  --bg:      #f0f4f8;
+  --card:    #ffffff;
+  --border:  #d0dae5;
+  --text:    #1a2535;
+  --muted:   #5a6a7a;
+  --green:   #2e7d32;
+  --green-bg:#e8f5e9;
+  --amber:   #e65100;
+  --amber-bg:#fff3e0;
+  --red:     #c62828;
+  --red-bg:  #ffebee;
+  --purple:  #6a1b9a;
+  --purple-bg:#f3e5f5;
+  --radius:  8px;
+  --shadow:  0 2px 8px rgba(0,0,0,0.10);
+  --shadow2: 0 4px 16px rgba(0,0,0,0.14);
+}
+html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; color: var(--text); background: var(--bg); }
+
+/* ── Layout ── */
+.layout { display: grid; grid-template-rows: 56px 1fr; grid-template-columns: 300px 1fr; height: 100vh; }
+.header { grid-column: 1 / -1; background: var(--navy); color: #fff; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-bottom: 2px solid var(--blue); }
+.header-logo { font-size: 22px; }
+.header-title { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+.header-sub { font-size: 11px; color: #90a4b8; margin-top: 1px; }
+.header-spacer { flex: 1; }
+.sse-indicator { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #90a4b8; }
+.sse-dot { width: 9px; height: 9px; border-radius: 50%; background: #546e7a; transition: background .3s; }
+.sse-dot.connected { background: #66bb6a; box-shadow: 0 0 6px #66bb6a; }
+
+/* ── Sidebar ── */
+.sidebar { background: var(--navy2); overflow-y: auto; border-right: 1px solid var(--navy3); display: flex; flex-direction: column; }
+.sidebar-section { padding: 14px 16px 10px; }
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.sidebar-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #607d8b; text-transform: uppercase; }
+.btn-icon { background: var(--blue); border: none; color: #fff; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+.btn-icon:hover { background: var(--blue2); }
+.device-list { display: flex; flex-direction: column; gap: 6px; }
+.device-card { background: var(--navy3); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; border: 2px solid transparent; transition: border-color .15s, background .15s; }
+.device-card:hover { background: #2d4059; }
+.device-card.selected { border-color: var(--blue3); background: #1e3a5a; }
+.device-card-name { font-weight: 600; font-size: 13px; color: #e0eaf5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device-card-id { font-size: 11px; color: #607d8b; font-family: monospace; margin-top: 2px; }
+.device-card-foot { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+.status-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; }
+.badge-active   { background: var(--green-bg); color: var(--green); }
+.badge-error    { background: var(--red-bg);   color: var(--red); }
+.badge-oos      { background: var(--amber-bg); color: var(--amber); }
+.device-card-road { font-size: 11px; color: #78909c; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.no-devices { text-align: center; color: #546e7a; padding: 24px 0; font-size: 13px; }
+.sidebar-sep { border: none; border-top: 1px solid var(--navy3); margin: 8px 0; }
+
+/* ── Main content ── */
+.main { overflow: hidden; display: flex; flex-direction: column; }
+.tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--card); padding: 0 20px; gap: 0; }
+.tab { padding: 14px 18px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; transition: color .15s; white-space: nowrap; }
+.tab:hover { color: var(--blue2); }
+.tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.tab-panels { flex: 1; overflow: hidden; position: relative; }
+.tab-panel { position: absolute; inset: 0; overflow-y: auto; display: none; padding: 20px; }
+.tab-panel.active { display: block; }
+
+/* ── Cards & forms ── */
+.card { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); margin-bottom: 16px; }
+.card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+.card-title { font-weight: 700; font-size: 14px; }
+.card-body { padding: 18px; }
+.form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.form-group input, .form-group select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; outline: none; transition: border-color .15s; background: #fff; }
+.form-group input:focus, .form-group select:focus { border-color: var(--blue2); box-shadow: 0 0 0 3px rgba(21,101,192,.1); }
+.form-group input.error { border-color: var(--red); }
+.form-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.btn { padding: 8px 18px; border-radius: 6px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s, opacity .15s; display: inline-flex; align-items: center; gap: 6px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary   { background: var(--blue);  color: #fff; }
+.btn-primary:hover:not(:disabled)   { background: var(--blue2); }
+.btn-success   { background: var(--green); color: #fff; }
+.btn-success:hover:not(:disabled)   { background: #388e3c; }
+.btn-danger    { background: var(--red);   color: #fff; }
+.btn-danger:hover:not(:disabled)    { background: #d32f2f; }
+.btn-secondary { background: #eceff1; color: var(--text); }
+.btn-secondary:hover:not(:disabled) { background: #cfd8dc; }
+.btn-amber     { background: var(--amber); color: #fff; }
+.btn-amber:hover:not(:disabled)     { background: #bf360c; }
+.btn-teal      { background: var(--teal);  color: #fff; }
+.btn-teal:hover:not(:disabled)      { background: #00697a; }
+.hint { font-size: 11px; color: var(--muted); }
+.field-note { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* ── Generate tab ── */
+.selected-device-banner { background: var(--navy2); border-radius: var(--radius); padding: 12px 16px; display: flex; align-items: center; gap: 14px; margin-bottom: 16px; color: #e0eaf5; }
+.sdb-info { flex: 1; }
+.sdb-name { font-weight: 700; font-size: 15px; }
+.sdb-meta { font-size: 11px; color: #90a4b8; margin-top: 3px; font-family: monospace; }
+.no-device-hint { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }
+.no-device-hint .icon { font-size: 48px; margin-bottom: 12px; }
+
+/* ── Alert log ── */
+.log-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.log-toolbar-spacer { flex: 1; }
+.log-count { font-size: 12px; color: var(--muted); background: #eceff1; padding: 3px 10px; border-radius: 10px; }
+.log-entry { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; overflow: hidden; transition: box-shadow .15s; }
+.log-entry:hover { box-shadow: var(--shadow); }
+.log-entry-header { padding: 10px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.type-badge { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; flex-shrink: 0; }
+.type-alert  { background: var(--red-bg);    color: var(--red); }
+.type-update { background: var(--purple-bg); color: var(--purple); }
+.log-alert-id { font-family: monospace; font-size: 12px; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-device-id { font-weight: 600; font-size: 12px; flex-shrink: 0; }
+.log-road { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.log-ts { font-size: 11px; color: #90a4b8; flex-shrink: 0; white-space: nowrap; }
+.log-source-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; flex-shrink: 0; }
+.src-simulator { background: #e3f2fd; color: #1565c0; }
+.src-external  { background: #f3e5f5; color: #6a1b9a; }
+.log-entry-body { border-top: 1px solid var(--border); padding: 12px 14px; display: none; }
+.log-entry-body.open { display: block; }
+.log-images { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.log-image-url { font-size: 11px; font-family: monospace; background: #f5f7f9; padding: 3px 8px; border-radius: 4px; color: var(--blue); word-break: break-all; }
+.xml-block { background: #1a2535; color: #a8d8ea; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; padding: 14px; border-radius: 6px; overflow-x: auto; white-space: pre; }
+.xml-tag    { color: #89ddff; }
+.xml-attr   { color: #c3e88d; }
+.xml-value  { color: #f78c6c; }
+.xml-text   { color: #eeffff; }
+.copy-btn   { float: right; font-size: 11px; padding: 3px 10px; margin-top: -2px; cursor: pointer; background: #2d4059; border: none; color: #90a4b8; border-radius: 4px; }
+.copy-btn:hover { background: #3a5270; color: #fff; }
+.no-logs { text-align: center; padding: 50px 20px; color: var(--muted); }
+
+/* ── Status tab ── */
+.status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.status-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.status-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.status-card-name { font-weight: 700; font-size: 14px; flex: 1; }
+.status-xml-pre { font-family: monospace; font-size: 11px; background: #f5f7f9; border-radius: 6px; padding: 10px; color: var(--muted); white-space: pre-wrap; word-break: break-all; margin-top: 8px; max-height: 140px; overflow-y: auto; }
+.status-ts { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.refresh-btn { font-size: 11px; }
+
+/* ── Settings tab ── */
+.settings-note { font-size: 12px; color: var(--muted); margin-bottom: 14px; line-height: 1.6; }
+.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.toggle { width: 38px; height: 21px; background: #ccc; border-radius: 11px; position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
+.toggle.on { background: var(--blue); }
+.toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.toggle.on::after { transform: translateX(17px); }
+.toggle-label { font-size: 13px; }
+
+/* ── Protocol reference ── */
+.proto-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.proto-table th { background: var(--navy); color: #e0eaf5; padding: 8px 12px; text-align: left; font-weight: 600; }
+.proto-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.proto-table tr:last-child td { border-bottom: none; }
+.proto-table tr:nth-child(even) td { background: #f7fafc; }
+.required { color: var(--green); font-weight: 700; font-size: 11px; }
+.optional  { color: var(--muted); font-size: 11px; }
+.mono { font-family: monospace; }
+.endpoint-pill { display: inline-block; padding: 3px 10px; border-radius: 4px; font-family: monospace; font-size: 12px; font-weight: 700; }
+.method-get  { background: #e3f2fd; color: #1565c0; }
+.method-post { background: #e8f5e9; color: #2e7d32; }
+
+/* ── Toast ── */
+.toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
+.toast { padding: 12px 18px; border-radius: var(--radius); color: #fff; font-size: 13px; font-weight: 500; box-shadow: var(--shadow2); animation: slideIn .2s ease; max-width: 320px; }
+.toast-success { background: var(--green); }
+.toast-error   { background: var(--red); }
+.toast-info    { background: var(--blue); }
+@keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #b0bec5; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #90a4ae; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="header-logo">🚗</div>
+    <div>
+      <div class="header-title">WWVDS SunGuide Protocol Simulator</div>
+      <div class="header-sub">Wrong Way Vehicle Detection System · FDOT Protocol Rev 3.0</div>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="sse-indicator">
+      <div class="sse-dot" id="sseDot"></div>
+      <span id="sseStatus">Connecting…</span>
+    </div>
+  </header>
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-header">
+        <span class="sidebar-label">Devices</span>
+        <button class="btn-icon" title="Add device" onclick="openAddDevice()">+</button>
+      </div>
+      <div class="device-list" id="deviceList">
+        <div class="no-devices">No devices configured.<br>Click + to add one.</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+    <nav class="tabs">
+      <div class="tab active" data-tab="config"  onclick="switchTab('config')">⚙ Device Config</div>
+      <div class="tab"        data-tab="generate" onclick="switchTab('generate')">⚡ Generate Events</div>
+      <div class="tab"        data-tab="log"      onclick="switchTab('log')">📋 Event Log <span id="logBadge"></span></div>
+      <div class="tab"        data-tab="status"   onclick="switchTab('status')">📡 Device Status</div>
+      <div class="tab"        data-tab="proto"    onclick="switchTab('proto')">📄 Protocol Ref</div>
+      <div class="tab"        data-tab="settings" onclick="switchTab('settings')">🔧 Settings</div>
+    </nav>
+
+    <div class="tab-panels">
+
+      <!-- ── Device Config Tab ── -->
+      <div class="tab-panel active" id="tab-config">
+        <div class="card">
+          <div class="card-header">
+            <span id="configCardIcon">➕</span>
+            <span class="card-title" id="configCardTitle">Add New Device</span>
+          </div>
+          <div class="card-body">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Device ID *</label>
+                <input id="f-deviceId" type="text" placeholder="e.g. WW-001" />
+                <span class="field-note">Unique identifier used in protocol messages</span>
+              </div>
+              <div class="form-group">
+                <label>Display Name</label>
+                <input id="f-name" type="text" placeholder="e.g. I-95 NB MP 42" />
+              </div>
+              <div class="form-group">
+                <label>IP Address</label>
+                <input id="f-ipAddress" type="text" placeholder="192.168.1.100" value="127.0.0.1" />
+                <span class="field-note">Used to construct simulated image URLs</span>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Device Status</label>
+                <select id="f-deviceStatus">
+                  {% for s in statuses %}
+                  <option value="{{ s }}">{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Roadway</label>
+                <input id="f-roadway" type="text" placeholder="e.g. I-95, SR-826" />
+                <span class="field-note">Default roadway for generated alerts</span>
+              </div>
+              <div class="form-group">
+                <label>Direction</label>
+                <select id="f-direction">
+                  <option value="">— none —</option>
+                  {% for d in directions %}
+                  <option value="{{ d }}">{{ d }}</option>
+                  {% endfor %}
+                </select>
+                <span class="field-note">Required if roadway is provided</span>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="saveDevice()">💾 Save Device</button>
+              <button class="btn btn-danger" id="btnDelete" onclick="deleteDevice()" style="display:none">🗑 Delete</button>
+              <button class="btn btn-secondary" onclick="clearForm()">✕ Clear</button>
+              <span class="hint" id="formHint"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">How to Use</span></div>
+          <div class="card-body" style="line-height:1.8; color: var(--muted); font-size:13px;">
+            <p>1. <strong>Add devices</strong> using the form above — each device represents a WWVDS camera unit in the field.</p>
+            <p>2. <strong>Select a device</strong> in the sidebar, then go to <em>Generate Events</em> to simulate alerts and image updates.</p>
+            <p>3. The <strong>Event Log</strong> tab shows all alerts and updates received by the simulated SunGuide server in real-time.</p>
+            <p>4. Use <strong>Device Status</strong> to query the <code>GET /v1/status</code> endpoint for any configured device.</p>
+            <p>5. Configure an external <strong>SunGuide URL</strong> in Settings to forward generated messages to a real SunGuide instance.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Generate Events Tab ── -->
+      <div class="tab-panel" id="tab-generate">
+        <div id="noDeviceHint" class="no-device-hint">
+          <div class="icon">📡</div>
+          <p>Select a device from the sidebar to generate events.</p>
+        </div>
+        <div id="generatePanel" style="display:none">
+          <div class="selected-device-banner" id="selectedBanner">
+            <span style="font-size:28px">📷</span>
+            <div class="sdb-info">
+              <div class="sdb-name" id="bannerName">—</div>
+              <div class="sdb-meta" id="bannerMeta">—</div>
+            </div>
+            <div id="bannerStatus"></div>
+          </div>
+
+          <!-- Alert Generation -->
+          <div class="card">
+            <div class="card-header">
+              <span style="color:var(--red)">🚨</span>
+              <span class="card-title">Generate Alert</span>
+              <span class="hint" style="margin-left:auto">POST /v1/alert</span>
+            </div>
+            <div class="card-body">
+              <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+                Simulates the WWVDS device detecting a wrong-way vehicle and immediately sending an alert to SunGuide.
+              </p>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Roadway Override</label>
+                  <input id="g-roadway" type="text" placeholder="Uses device default if blank" />
+                </div>
+                <div class="form-group">
+                  <label>Direction Override</label>
+                  <select id="g-direction">
+                    <option value="">Use device default</option>
+                    {% for d in directions %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Number of Images (0–10)</label>
+                  <input id="g-numImages" type="number" min="0" max="10" value="2" />
+                  <span class="field-note">0 = no imageList in alert</span>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-danger" onclick="generateAlert()">🚨 Generate Alert</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Update Generation -->
+          <div class="card">
+            <div class="card-header">
+              <span style="color:var(--purple)">📸</span>
+              <span class="card-title">Send Image Update</span>
+              <span class="hint" style="margin-left:auto">POST /v1/update</span>
+            </div>
+            <div class="card-body">
+              <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+                Simulates the WWVDS device sending additional images after the initial alert (images captured after the alert was sent).
+              </p>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Alert ID *</label>
+                  <select id="g-alertId">
+                    <option value="">— select from recent alerts —</option>
+                  </select>
+                  <span class="field-note">Or type an alert ID below</span>
+                </div>
+                <div class="form-group">
+                  <label>Manual Alert ID</label>
+                  <input id="g-alertIdManual" type="text" placeholder="Paste alert UUID here" />
+                </div>
+                <div class="form-group">
+                  <label>Number of Images (1–10)</label>
+                  <input id="g-updateNumImages" type="number" min="1" max="10" value="3" />
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-amber" onclick="generateUpdate()">📸 Send Image Update</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- XML Preview -->
+          <div class="card" id="xmlPreviewCard" style="display:none">
+            <div class="card-header">
+              <span>📄</span>
+              <span class="card-title">Last Generated XML</span>
+            </div>
+            <div class="card-body">
+              <div class="xml-block" id="xmlPreview"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Event Log Tab ── -->
+      <div class="tab-panel" id="tab-log">
+        <div class="log-toolbar">
+          <strong style="font-size:14px">SunGuide Event Log</strong>
+          <span class="log-count" id="logCount">0 events</span>
+          <div class="log-toolbar-spacer"></div>
+          <label style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="autoScrollCheck" checked> Auto-scroll
+          </label>
+          <button class="btn btn-secondary" style="font-size:12px" onclick="clearLog()">🗑 Clear Log</button>
+        </div>
+        <div id="logEntries">
+          <div class="no-logs">No events yet. Generate an alert to see it here.</div>
+        </div>
+      </div>
+
+      <!-- ── Device Status Tab ── -->
+      <div class="tab-panel" id="tab-status">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+          <strong style="font-size:14px">Live Device Status</strong>
+          <span class="hint">Queries GET /v1/status?DeviceId={id}</span>
+          <div style="flex:1"></div>
+          <button class="btn btn-teal refresh-btn" onclick="refreshAllStatus()">↻ Refresh All</button>
+        </div>
+        <div class="status-grid" id="statusGrid">
+          <div style="color:var(--muted); font-size:13px; grid-column:1/-1;">No devices configured.</div>
+        </div>
+      </div>
+
+      <!-- ── Protocol Reference Tab ── -->
+      <div class="tab-panel" id="tab-proto">
+        <div class="card">
+          <div class="card-header"><span class="card-title">WWVDS SunGuide HTTP Protocol — Quick Reference</span><span class="hint" style="margin-left:auto">Rev 3.0 · March 2026</span></div>
+          <div class="card-body" style="line-height:1.6">
+
+            <h3 style="margin-bottom:10px; color:var(--navy)">1. Device Status</h3>
+            <p style="font-size:12px; color:var(--muted); margin-bottom:10px;">SunGuide polls the WWVDS device to get its current operational status.</p>
+            <p style="margin-bottom:8px;"><span class="endpoint-pill method-get">GET</span> <code>http[s]://&lt;device-ip&gt;/v1/status?DeviceId={deviceId}</code></p>
+            <table class="proto-table" style="margin-bottom:20px">
+              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">deviceId</td><td>string</td><td><span class="required">YES</span></td><td>Unique ID of the device</td></tr>
+                <tr><td class="mono">deviceStatus</td><td>string</td><td><span class="required">YES</span></td><td><strong>Active</strong> – operational &amp; detecting<br><strong>Error</strong> – detection non-functional<br><strong>Out of Service</strong> – intentionally non-functional</td></tr>
+                <tr><td class="mono">deviceTimestamp</td><td>dateTime</td><td><span class="required">YES</span></td><td>ISO 8601 timestamp (e.g. 2021-06-15T13:45:30.0000000-07:00)</td></tr>
+              </tbody>
+            </table>
+
+            <h3 style="margin-bottom:10px; color:var(--navy)">2. Wrong-Way Alert</h3>
+            <p style="font-size:12px; color:var(--muted); margin-bottom:10px;">Sent immediately when a wrong-way vehicle is detected. Device POSTs to SunGuide.</p>
+            <p style="margin-bottom:8px;"><span class="endpoint-pill method-post">POST</span> <code>http[s]://&lt;sunguide-ip&gt;/v1/alert</code></p>
+            <table class="proto-table" style="margin-bottom:20px">
+              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">alertId</td><td>string</td><td><span class="required">YES</span></td><td>Unique ID for this alert</td></tr>
+                <tr><td class="mono">deviceId</td><td>string</td><td><span class="required">YES</span></td><td>Device that generated the alert</td></tr>
+                <tr><td class="mono">alertTimestamp</td><td>dateTime</td><td><span class="required">YES</span></td><td>ISO 8601 timestamp</td></tr>
+                <tr><td class="mono">imageList</td><td>list</td><td><span class="optional">optional</span></td><td>0–10 image URLs available at alert time</td></tr>
+                <tr><td class="mono">imageLocation</td><td>string</td><td><span class="optional">optional</span></td><td>URL to download an image</td></tr>
+                <tr><td class="mono">roadway</td><td>string</td><td><span class="optional">optional</span></td><td>Roadway name (requires direction)</td></tr>
+                <tr><td class="mono">direction</td><td>string</td><td><span class="optional">optional</span></td><td>Northbound · Eastbound · Southbound · Westbound · Innerloop · Outerloop<br>(requires roadway)</td></tr>
+              </tbody>
+            </table>
+
+            <h3 style="margin-bottom:10px; color:var(--navy)">3. Image Update</h3>
+            <p style="font-size:12px; color:var(--muted); margin-bottom:10px;">Sent multiple times as additional images become available after the alert. Device POSTs to SunGuide.</p>
+            <p style="margin-bottom:8px;"><span class="endpoint-pill method-post">POST</span> <code>http[s]://&lt;sunguide-ip&gt;/v1/update</code></p>
+            <table class="proto-table" style="margin-bottom:20px">
+              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">alertId</td><td>string</td><td><span class="required">YES</span></td><td>Alert ID this update belongs to</td></tr>
+                <tr><td class="mono">deviceId</td><td>string</td><td><span class="required">YES</span></td><td>Device that generated the original alert</td></tr>
+                <tr><td class="mono">updateTimestamp</td><td>dateTime</td><td><span class="required">YES</span></td><td>ISO 8601 timestamp</td></tr>
+                <tr><td class="mono">imageList</td><td>list</td><td><span class="required">YES</span></td><td>1–10 image URLs (mandatory in update)</td></tr>
+                <tr><td class="mono">imageLocation</td><td>string</td><td><span class="required">YES</span></td><td>URL to download an image</td></tr>
+              </tbody>
+            </table>
+
+            <h3 style="margin-bottom:8px; color:var(--navy)">HTTP Response Codes</h3>
+            <table class="proto-table">
+              <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">200 OK</td><td>Successful response</td></tr>
+                <tr><td class="mono">400 Bad Request</td><td>Malformed request or missing required fields</td></tr>
+                <tr><td class="mono">404 Not Found</td><td>Device not found (status endpoint)</td></tr>
+                <tr><td class="mono">500 Internal Server Error</td><td>Server-side error</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Settings Tab ── -->
+      <div class="tab-panel" id="tab-settings">
+        <div class="card">
+          <div class="card-header"><span class="card-title">External SunGuide Configuration</span></div>
+          <div class="card-body">
+            <p class="settings-note">
+              Optionally configure a real SunGuide server URL. When enabled, generated alerts and updates will be
+              forwarded to that server via HTTP POST in addition to being stored locally.
+              This allows testing interoperability with an actual SunGuide installation.
+            </p>
+            <div class="form-group" style="margin-bottom:14px; max-width:500px">
+              <label>SunGuide Base URL</label>
+              <input id="s-sunguideUrl" type="url" placeholder="http://192.168.1.50:8080" />
+              <span class="field-note">Leave blank to disable forwarding. Include port if non-standard.</span>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle" id="fwdToggle" onclick="toggleForward()"></div>
+              <span class="toggle-label">Forward generated events to SunGuide</span>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Protocol Endpoints on This Simulator</span></div>
+          <div class="card-body" style="font-size:13px; line-height:2; font-family:monospace; color:var(--muted)">
+            <div><span class="endpoint-pill method-get" style="font-size:11px">GET</span>  &nbsp;<span id="epStatus">/v1/status?DeviceId={id}</span></div>
+            <div><span class="endpoint-pill method-post" style="font-size:11px">POST</span> &nbsp;<span id="epAlert">/v1/alert</span></div>
+            <div><span class="endpoint-pill method-post" style="font-size:11px">POST</span> &nbsp;<span id="epUpdate">/v1/update</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-panels -->
+  </main>
+
+</div><!-- /layout -->
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let devices = [];
+let logEntries = [];
+let selectedDeviceId = null;
+let editingDeviceId = null;
+let forwardEnabled = false;
+let logCount = 0;
+
+// ── Tabs ───────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  if (name === 'status') refreshAllStatus();
+  if (name === 'log') scrollLogToTop();
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ── Device sidebar ─────────────────────────────────────────────────────────
+function statusBadgeClass(s) {
+  if (s === 'Active') return 'badge-active';
+  if (s === 'Error')  return 'badge-error';
+  return 'badge-oos';
+}
+
+function renderDevices() {
+  const el = document.getElementById('deviceList');
+  if (devices.length === 0) {
+    el.innerHTML = '<div class="no-devices">No devices configured.<br>Click + to add one.</div>';
+    return;
+  }
+  el.innerHTML = devices.map(d => `
+    <div class="device-card ${d.deviceId === selectedDeviceId ? 'selected' : ''}"
+         onclick="selectDevice('${esc(d.deviceId)}')">
+      <div class="device-card-name">${esc(d.name || d.deviceId)}</div>
+      <div class="device-card-id">${esc(d.deviceId)}</div>
+      <div class="device-card-foot">
+        <span class="status-badge ${statusBadgeClass(d.deviceStatus)}">${esc(d.deviceStatus)}</span>
+        <span class="device-card-road">${d.roadway ? esc(d.roadway) + (d.direction ? ' ' + esc(d.direction[0]) + 'B' : '') : ''}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectDevice(id) {
+  selectedDeviceId = id;
+  renderDevices();
+  updateGeneratePanel();
+  // Also populate the config form for editing
+  const dev = devices.find(d => d.deviceId === id);
+  if (dev) populateForm(dev);
+}
+
+// ── Device Config Form ─────────────────────────────────────────────────────
+function openAddDevice() {
+  clearForm();
+  switchTab('config');
+}
+
+function clearForm() {
+  editingDeviceId = null;
+  ['deviceId','name','ipAddress','roadway'].forEach(f => document.getElementById('f-'+f).value = '');
+  document.getElementById('f-ipAddress').value = '127.0.0.1';
+  document.getElementById('f-deviceStatus').value = 'Active';
+  document.getElementById('f-direction').value = '';
+  document.getElementById('f-deviceId').disabled = false;
+  document.getElementById('configCardTitle').textContent = 'Add New Device';
+  document.getElementById('configCardIcon').textContent = '➕';
+  document.getElementById('btnDelete').style.display = 'none';
+  document.getElementById('formHint').textContent = '';
+}
+
+function populateForm(dev) {
+  editingDeviceId = dev.deviceId;
+  document.getElementById('f-deviceId').value = dev.deviceId;
+  document.getElementById('f-deviceId').disabled = true;
+  document.getElementById('f-name').value = dev.name || '';
+  document.getElementById('f-ipAddress').value = dev.ipAddress || '127.0.0.1';
+  document.getElementById('f-deviceStatus').value = dev.deviceStatus;
+  document.getElementById('f-roadway').value = dev.roadway || '';
+  document.getElementById('f-direction').value = dev.direction || '';
+  document.getElementById('configCardTitle').textContent = 'Edit Device';
+  document.getElementById('configCardIcon').textContent = '✏️';
+  document.getElementById('btnDelete').style.display = '';
+  document.getElementById('formHint').textContent = '';
+  switchTab('config');
+}
+
+async function saveDevice() {
+  const did = document.getElementById('f-deviceId').value.trim();
+  if (!did) { document.getElementById('f-deviceId').classList.add('error'); toast('Device ID is required', 'error'); return; }
+  document.getElementById('f-deviceId').classList.remove('error');
+
+  const payload = {
+    deviceId:     did,
+    name:         document.getElementById('f-name').value.trim() || did,
+    ipAddress:    document.getElementById('f-ipAddress').value.trim() || '127.0.0.1',
+    deviceStatus: document.getElementById('f-deviceStatus').value,
+    roadway:      document.getElementById('f-roadway').value.trim(),
+    direction:    document.getElementById('f-direction').value,
+  };
+
+  try {
+    let resp;
+    if (editingDeviceId) {
+      resp = await fetch(`/api/devices/${encodeURIComponent(editingDeviceId)}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+    } else {
+      resp = await fetch('/api/devices', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+    }
+    if (!resp.ok) { const j = await resp.json(); toast(j.error || 'Error saving device', 'error'); return; }
+    const saved = await resp.json();
+    toast(`Device '${saved.name}' ${editingDeviceId ? 'updated' : 'added'}`, 'success');
+    await loadDevices();
+    selectDevice(saved.deviceId);
+  } catch(e) { toast('Network error: ' + e.message, 'error'); }
+}
+
+async function deleteDevice() {
+  if (!editingDeviceId) return;
+  if (!confirm(`Delete device '${editingDeviceId}'?`)) return;
+  try {
+    const resp = await fetch(`/api/devices/${encodeURIComponent(editingDeviceId)}`, { method: 'DELETE' });
+    if (!resp.ok && resp.status !== 204) { toast('Error deleting device', 'error'); return; }
+    toast(`Device '${editingDeviceId}' deleted`, 'info');
+    if (selectedDeviceId === editingDeviceId) {
+      selectedDeviceId = null;
+      updateGeneratePanel();
+    }
+    clearForm();
+    await loadDevices();
+  } catch(e) { toast('Network error: ' + e.message, 'error'); }
+}
+
+// ── Generate Events Tab ────────────────────────────────────────────────────
+function updateGeneratePanel() {
+  const dev = devices.find(d => d.deviceId === selectedDeviceId);
+  document.getElementById('noDeviceHint').style.display = dev ? 'none' : '';
+  document.getElementById('generatePanel').style.display = dev ? '' : 'none';
+  if (!dev) return;
+  document.getElementById('bannerName').textContent = dev.name || dev.deviceId;
+  document.getElementById('bannerMeta').textContent = `ID: ${dev.deviceId}  ·  IP: ${dev.ipAddress}`;
+  document.getElementById('bannerStatus').innerHTML = `<span class="status-badge ${statusBadgeClass(dev.deviceStatus)}">${esc(dev.deviceStatus)}</span>`;
+  // Populate alert ID dropdown with this device's recent alerts
+  refreshAlertIdDropdown();
+}
+
+function refreshAlertIdDropdown() {
+  const sel = document.getElementById('g-alertId');
+  const devAlerts = logEntries.filter(e => e.type === 'alert' && e.deviceId === selectedDeviceId);
+  sel.innerHTML = '<option value="">— select from recent alerts —</option>' +
+    devAlerts.slice(-20).reverse().map(a =>
+      `<option value="${esc(a.alertId)}">${esc(a.alertId.slice(0,8))}… · ${a.alertTimestamp ? a.alertTimestamp.slice(0,19) : ''}</option>`
+    ).join('');
+}
+
+async function generateAlert() {
+  if (!selectedDeviceId) { toast('No device selected', 'error'); return; }
+  const payload = {
+    roadway:   document.getElementById('g-roadway').value.trim(),
+    direction: document.getElementById('g-direction').value,
+    numImages: parseInt(document.getElementById('g-numImages').value) || 2,
+  };
+  try {
+    const resp = await fetch(`/api/devices/${encodeURIComponent(selectedDeviceId)}/alert`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    if (!resp.ok) { const j = await resp.json(); toast(j.error || 'Error', 'error'); return; }
+    const result = await resp.json();
+    showXmlPreview(result.xml);
+    toast('Alert generated → SunGuide received', 'success');
+    // Pre-populate alert ID for update
+    document.getElementById('g-alertIdManual').value = result.alertId;
+  } catch(e) { toast('Network error: ' + e.message, 'error'); }
+}
+
+async function generateUpdate() {
+  if (!selectedDeviceId) { toast('No device selected', 'error'); return; }
+  const alertId = document.getElementById('g-alertId').value ||
+                  document.getElementById('g-alertIdManual').value.trim();
+  if (!alertId) { toast('Alert ID is required for image update', 'error'); return; }
+  const payload = {
+    alertId,
+    numImages: parseInt(document.getElementById('g-updateNumImages').value) || 3,
+  };
+  try {
+    const resp = await fetch(`/api/devices/${encodeURIComponent(selectedDeviceId)}/update`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    if (!resp.ok) { const j = await resp.json(); toast(j.error || 'Error', 'error'); return; }
+    const result = await resp.json();
+    showXmlPreview(result.xml);
+    toast('Image update sent → SunGuide received', 'success');
+  } catch(e) { toast('Network error: ' + e.message, 'error'); }
+}
+
+function showXmlPreview(xml) {
+  document.getElementById('xmlPreviewCard').style.display = '';
+  document.getElementById('xmlPreview').innerHTML =
+    '<button class="copy-btn" onclick="copyXml()">Copy</button>' + highlightXml(esc(xml));
+}
+
+function copyXml() {
+  const raw = document.getElementById('xmlPreview').innerText.replace(/^Copy\n?/, '');
+  navigator.clipboard.writeText(raw).then(() => toast('XML copied', 'info'));
+}
+
+// ── Event Log ──────────────────────────────────────────────────────────────
+function renderLog() {
+  const el = document.getElementById('logEntries');
+  document.getElementById('logCount').textContent = `${logEntries.length} event${logEntries.length !== 1 ? 's' : ''}`;
+  document.getElementById('logBadge').textContent = logEntries.length > 0 ? ` (${logEntries.length})` : '';
+  if (logEntries.length === 0) {
+    el.innerHTML = '<div class="no-logs">No events yet. Generate an alert to see it here.</div>';
+    return;
+  }
+  el.innerHTML = [...logEntries].reverse().map((e, i) => renderLogEntry(e, i)).join('');
+}
+
+function renderLogEntry(e, idx) {
+  const isAlert  = e.type === 'alert';
+  const isUpdate = e.type === 'update';
+  const ts = (e.alertTimestamp || e.updateTimestamp || e.receivedAt || '').slice(0,19).replace('T',' ');
+  const road = e.roadway ? `${esc(e.roadway)} ${esc(e.direction || '')}` : '';
+  const images = e.images || [];
+  const srcClass = e.source === 'external' ? 'src-external' : 'src-simulator';
+  const srcLabel = e.source === 'external' ? 'External' : 'Simulator';
+
+  const imageHtml = images.length > 0
+    ? `<div class="log-images">${images.map(u => `<span class="log-image-url">${esc(u)}</span>`).join('')}</div>`
+    : '<p style="font-size:12px;color:var(--muted);margin-bottom:8px;">No images in this message.</p>';
+
+  const fwdHtml = e.forwardResult
+    ? `<p style="font-size:11px;color:var(--muted);margin-bottom:8px;">
+        Forward → <code>${esc(e.forwardResult.url)}</code>
+        ${e.forwardResult.error ? `<span style="color:var(--red)">Error: ${esc(e.forwardResult.error)}</span>`
+                                : `<span style="color:var(--green)">HTTP ${e.forwardResult.status}</span>`}
+       </p>` : '';
+
+  return `
+    <div class="log-entry" id="le-${idx}">
+      <div class="log-entry-header" onclick="toggleLogEntry(${idx})">
+        <span class="type-badge type-${isAlert ? 'alert' : 'update'}">${isAlert ? '🚨 ALERT' : '📸 UPDATE'}</span>
+        <span class="log-device-id">${esc(e.deviceId)}</span>
+        <span class="log-alert-id">${esc((e.alertId||'').slice(0,36))}</span>
+        ${road ? `<span class="log-road">${road}</span>` : ''}
+        <span class="log-source-badge ${srcClass}">${srcLabel}</span>
+        <span class="log-ts">${ts}</span>
+      </div>
+      <div class="log-entry-body" id="lb-${idx}">
+        ${imageHtml}
+        ${fwdHtml}
+        <div class="xml-block">${highlightXml(esc(e.xmlPayload || ''))}</div>
+      </div>
+    </div>`;
+}
+
+function toggleLogEntry(idx) {
+  const body = document.getElementById('lb-' + idx);
+  if (body) body.classList.toggle('open');
+}
+
+function scrollLogToTop() {
+  const panel = document.getElementById('tab-log');
+  if (panel) panel.scrollTop = 0;
+}
+
+async function clearLog() {
+  if (!confirm('Clear all events from the log?')) return;
+  await fetch('/api/alerts', { method: 'DELETE' });
+  logEntries = [];
+  renderLog();
+  toast('Event log cleared', 'info');
+}
+
+// ── Device Status Tab ──────────────────────────────────────────────────────
+async function refreshAllStatus() {
+  const grid = document.getElementById('statusGrid');
+  if (devices.length === 0) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px;grid-column:1/-1;">No devices configured.</div>';
+    return;
+  }
+  for (const dev of devices) {
+    await refreshDeviceStatus(dev);
+  }
+}
+
+async function refreshDeviceStatus(dev) {
+  const grid = document.getElementById('statusGrid');
+  let card = document.getElementById('sc-' + dev.deviceId);
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'status-card';
+    card.id = 'sc-' + dev.deviceId;
+    grid.appendChild(card);
+  }
+  card.innerHTML = `
+    <div class="status-card-top">
+      <div class="status-card-name">${esc(dev.name || dev.deviceId)}</div>
+      <button class="btn btn-teal refresh-btn" onclick="refreshDeviceStatus(devices.find(d=>d.deviceId==='${esc(dev.deviceId)}'))">↻</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:monospace">GET /v1/status?DeviceId=${esc(dev.deviceId)}</div>
+    <div id="sc-body-${esc(dev.deviceId)}" style="font-size:12px;color:var(--muted)">Querying…</div>`;
+
+  try {
+    const resp = await fetch(`/v1/status?DeviceId=${encodeURIComponent(dev.deviceId)}`);
+    const xml = await resp.text();
+    const bodyEl = document.getElementById('sc-body-' + dev.deviceId);
+    if (bodyEl) {
+      bodyEl.innerHTML = `
+        <div><span class="status-badge ${statusBadgeClass(dev.deviceStatus)}">${esc(dev.deviceStatus)}</span></div>
+        <div class="status-xml-pre">${highlightXml(esc(xml))}</div>
+        <div class="status-ts">HTTP ${resp.status} · ${new Date().toLocaleTimeString()}</div>`;
+    }
+  } catch(e) {
+    const bodyEl = document.getElementById('sc-body-' + dev.deviceId);
+    if (bodyEl) bodyEl.innerHTML = `<span style="color:var(--red)">Error: ${esc(e.message)}</span>`;
+  }
+}
+
+function rebuildStatusGrid() {
+  const grid = document.getElementById('statusGrid');
+  // Remove cards for deleted devices
+  const ids = new Set(devices.map(d => d.deviceId));
+  grid.querySelectorAll('.status-card').forEach(c => {
+    const did = c.id.replace('sc-', '');
+    if (!ids.has(did)) c.remove();
+  });
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────
+function toggleForward() {
+  forwardEnabled = !forwardEnabled;
+  document.getElementById('fwdToggle').classList.toggle('on', forwardEnabled);
+}
+
+async function saveSettings() {
+  const payload = {
+    sunguideUrl: document.getElementById('s-sunguideUrl').value.trim(),
+    forwardToSunguide: forwardEnabled,
+  };
+  try {
+    const resp = await fetch('/api/settings', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    if (!resp.ok) { toast('Error saving settings', 'error'); return; }
+    toast('Settings saved', 'success');
+  } catch(e) { toast('Network error', 'error'); }
+}
+
+async function loadSettings() {
+  try {
+    const resp = await fetch('/api/settings');
+    const s = await resp.json();
+    document.getElementById('s-sunguideUrl').value = s.sunguideUrl || '';
+    forwardEnabled = !!s.forwardToSunguide;
+    document.getElementById('fwdToggle').classList.toggle('on', forwardEnabled);
+  } catch(e) {}
+  // Show local endpoints
+  const base = window.location.origin;
+  document.getElementById('epStatus').textContent  = `${base}/v1/status?DeviceId={id}`;
+  document.getElementById('epAlert').textContent   = `${base}/v1/alert`;
+  document.getElementById('epUpdate').textContent  = `${base}/v1/update`;
+}
+
+// ── SSE ────────────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  const dot = document.getElementById('sseDot');
+  const lbl = document.getElementById('sseStatus');
+
+  es.onopen = () => {
+    dot.classList.add('connected');
+    lbl.textContent = 'Live';
+  };
+  es.onmessage = (ev) => {
+    try {
+      const data = JSON.parse(ev.data);
+      if (data.type === 'connected') return;
+      if (data.type === 'alert' || data.type === 'update') {
+        logEntries.push(data);
+        renderLog();
+        refreshAlertIdDropdown();
+        if (document.getElementById('autoScrollCheck').checked &&
+            document.getElementById('tab-log').classList.contains('active')) {
+          scrollLogToTop();
+        }
+      }
+    } catch(e) {}
+  };
+  es.onerror = () => {
+    dot.classList.remove('connected');
+    lbl.textContent = 'Reconnecting…';
+  };
+}
+
+// ── Data loading ───────────────────────────────────────────────────────────
+async function loadDevices() {
+  try {
+    const resp = await fetch('/api/devices');
+    devices = await resp.json();
+    renderDevices();
+    rebuildStatusGrid();
+    updateGeneratePanel();
+  } catch(e) {}
+}
+
+async function loadAlerts() {
+  try {
+    const resp = await fetch('/api/alerts');
+    logEntries = await resp.json();
+    logEntries.reverse(); // API returns newest-first, we want chronological
+    renderLog();
+  } catch(e) {}
+}
+
+// ── XML syntax highlighting ────────────────────────────────────────────────
+function highlightXml(escaped) {
+  // Already HTML-escaped; apply highlighting via spans
+  return escaped
+    .replace(/(&lt;\/?[\w]+)(&gt;|[\s\/])/g, '<span class="xml-tag">$1</span>$2')
+    .replace(/(&lt;\/?[\w]+)(&gt;)/g, '<span class="xml-tag">$1</span><span class="xml-tag">$2</span>')
+    .replace(/([\w:]+)=(&quot;[^&]*&quot;)/g, '<span class="xml-attr">$1</span>=<span class="xml-value">$2</span>');
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+(async function init() {
+  await loadSettings();
+  await loadDevices();
+  await loadAlerts();
+  connectSSE();
+})();
+</script>
+</body>
+</html>
