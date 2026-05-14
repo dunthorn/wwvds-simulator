@@ -30,6 +30,7 @@ import threading
 import queue
 import random
 import requests as http_requests
+import os
 
 app = Flask(__name__)
 
@@ -37,6 +38,28 @@ app = Flask(__name__)
 
 DEVICE_STATUSES = ["Active", "Error", "Out of Service"]
 DIRECTIONS = ["Northbound", "Eastbound", "Southbound", "Westbound", "Innerloop", "Outerloop"]
+
+# ─── Persistence ─────────────────────────────────────────────────────────────
+
+DEVICES_FILE = os.path.join(os.path.dirname(__file__), "devices.json")
+
+
+def save_devices() -> None:
+    with open(DEVICES_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(devices.values()), f, indent=2)
+
+
+def load_devices() -> None:
+    if not os.path.exists(DEVICES_FILE):
+        return
+    try:
+        with open(DEVICES_FILE, encoding="utf-8") as f:
+            for dev in json.load(f):
+                devices[dev["deviceId"]] = dev
+        print(f"Loaded {len(devices)} device(s) from {DEVICES_FILE}")
+    except Exception as exc:
+        print(f"Warning: could not load {DEVICES_FILE}: {exc}")
+
 
 # ─── In-memory state ──────────────────────────────────────────────────────────
 
@@ -249,6 +272,7 @@ def api_add_device():
             "ipAddress": (data.get("ipAddress") or "127.0.0.1").strip(),
         }
         devices[did] = dev
+    save_devices()
     return jsonify(dev), 201
 
 
@@ -262,6 +286,7 @@ def api_update_device(did):
         for key in ("name", "deviceStatus", "roadway", "direction", "ipAddress"):
             if key in data:
                 dev[key] = (data[key] or "").strip() if key != "deviceStatus" else data[key]
+    save_devices()
     return jsonify(dev)
 
 
@@ -271,6 +296,7 @@ def api_delete_device(did):
         if did not in devices:
             return jsonify({"error": "Device not found"}), 404
         del devices[did]
+    save_devices()
     return "", 204
 
 
@@ -431,6 +457,7 @@ def index():
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    load_devices()
     print("WWVDS SunGuide Protocol Simulator")
     print("  Web UI:         http://localhost:5000/")
     print("  Status API:     GET  http://localhost:5000/v1/status?DeviceId=<id>")
