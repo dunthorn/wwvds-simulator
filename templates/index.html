@@ -283,6 +283,27 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; font-
                 <span class="field-note">Required if roadway is provided</span>
               </div>
             </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Snapshot Set</label>
+                <select id="f-snapshotSet" onchange="onSnapshotSetChange()">
+                  <option value="">— none (use fabricated URLs) —</option>
+                  {% for n in range(1, 17) %}
+                  <option value="{{ n }}">Set {{ '%03d' % n }}</option>
+                  {% endfor %}
+                </select>
+                <span class="field-note">Real snapshots from the image server</span>
+              </div>
+              <div class="form-group" id="fg-numSnapshots" style="display:none">
+                <label>Number of Snapshots *</label>
+                <select id="f-numSnapshots">
+                  {% for n in range(1, 11) %}
+                  <option value="{{ n }}">{{ n }}</option>
+                  {% endfor %}
+                </select>
+                <span class="field-note">How many snapshot URLs to include per event</span>
+              </div>
+            </div>
             <div class="form-actions">
               <button class="btn btn-primary" onclick="saveDevice()">💾 Save Device</button>
               <button class="btn btn-danger" id="btnDelete" onclick="deleteDevice()" style="display:none">🗑 Delete</button>
@@ -345,10 +366,14 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; font-
                     {% endfor %}
                   </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="fg-numImages">
                   <label>Number of Images (0–10)</label>
                   <input id="g-numImages" type="number" min="0" max="10" value="2" />
                   <span class="field-note">0 = no imageList in alert</span>
+                </div>
+              <div class="form-group" id="fg-snapshotInfo" style="display:none">
+                  <label>Snapshot Set</label>
+                  <div id="g-snapshotInfo" style="font-size:13px; padding:8px 10px; background:#e3f2fd; border-radius:6px; color:var(--blue)"></div>
                 </div>
               </div>
               <div class="form-actions">
@@ -380,9 +405,13 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; font-
                   <label>Manual Alert ID</label>
                   <input id="g-alertIdManual" type="text" placeholder="Paste alert UUID here" />
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="fg-updateNumImages">
                   <label>Number of Images (1–10)</label>
                   <input id="g-updateNumImages" type="number" min="1" max="10" value="3" />
+                </div>
+                <div class="form-group" id="fg-updateSnapshotInfo" style="display:none">
+                  <label>Snapshot Set</label>
+                  <div id="g-updateSnapshotInfo" style="font-size:13px; padding:8px 10px; background:#e3f2fd; border-radius:6px; color:var(--blue)"></div>
                 </div>
               </div>
               <div class="form-actions">
@@ -605,12 +634,20 @@ function openAddDevice() {
   switchTab('config');
 }
 
+function onSnapshotSetChange() {
+  const val = document.getElementById('f-snapshotSet').value;
+  document.getElementById('fg-numSnapshots').style.display = val ? '' : 'none';
+}
+
 function clearForm() {
   editingDeviceId = null;
   ['deviceId','name','ipAddress','roadway'].forEach(f => document.getElementById('f-'+f).value = '');
   document.getElementById('f-ipAddress').value = '127.0.0.1';
   document.getElementById('f-deviceStatus').value = 'Active';
   document.getElementById('f-direction').value = '';
+  document.getElementById('f-snapshotSet').value = '';
+  document.getElementById('f-numSnapshots').value = '1';
+  document.getElementById('fg-numSnapshots').style.display = 'none';
   document.getElementById('f-deviceId').disabled = false;
   document.getElementById('configCardTitle').textContent = 'Add New Device';
   document.getElementById('configCardIcon').textContent = '➕';
@@ -627,6 +664,9 @@ function populateForm(dev) {
   document.getElementById('f-deviceStatus').value = dev.deviceStatus;
   document.getElementById('f-roadway').value = dev.roadway || '';
   document.getElementById('f-direction').value = dev.direction || '';
+  document.getElementById('f-snapshotSet').value = dev.snapshotSet || '';
+  document.getElementById('f-numSnapshots').value = dev.numSnapshots || '1';
+  document.getElementById('fg-numSnapshots').style.display = dev.snapshotSet ? '' : 'none';
   document.getElementById('configCardTitle').textContent = 'Edit Device';
   document.getElementById('configCardIcon').textContent = '✏️';
   document.getElementById('btnDelete').style.display = '';
@@ -639,6 +679,11 @@ async function saveDevice() {
   if (!did) { document.getElementById('f-deviceId').classList.add('error'); toast('Device ID is required', 'error'); return; }
   document.getElementById('f-deviceId').classList.remove('error');
 
+  const snapshotSet = document.getElementById('f-snapshotSet').value;
+  if (snapshotSet && !document.getElementById('f-numSnapshots').value) {
+    toast('Number of Snapshots is required when a Snapshot Set is selected', 'error');
+    return;
+  }
   const payload = {
     deviceId:     did,
     name:         document.getElementById('f-name').value.trim() || did,
@@ -646,6 +691,8 @@ async function saveDevice() {
     deviceStatus: document.getElementById('f-deviceStatus').value,
     roadway:      document.getElementById('f-roadway').value.trim(),
     direction:    document.getElementById('f-direction').value,
+    snapshotSet:  snapshotSet ? parseInt(snapshotSet) : null,
+    numSnapshots: snapshotSet ? parseInt(document.getElementById('f-numSnapshots').value) : null,
   };
 
   try {
@@ -692,6 +739,20 @@ function updateGeneratePanel() {
   document.getElementById('bannerName').textContent = dev.name || dev.deviceId;
   document.getElementById('bannerMeta').textContent = `ID: ${dev.deviceId}  ·  IP: ${dev.ipAddress}`;
   document.getElementById('bannerStatus').innerHTML = `<span class="status-badge ${statusBadgeClass(dev.deviceStatus)}">${esc(dev.deviceStatus)}</span>`;
+
+  // Show snapshot set info or number-of-images input
+  const hasSnapshot = !!dev.snapshotSet;
+  const snapshotLabel = hasSnapshot
+    ? `Set ${String(dev.snapshotSet).padStart(3,'0')} · ${dev.numSnapshots} snapshot${dev.numSnapshots !== 1 ? 's' : ''} per event`
+    : '';
+  document.getElementById('fg-numImages').style.display = hasSnapshot ? 'none' : '';
+  document.getElementById('fg-snapshotInfo').style.display = hasSnapshot ? '' : 'none';
+  if (hasSnapshot) document.getElementById('g-snapshotInfo').textContent = snapshotLabel;
+
+  document.getElementById('fg-updateNumImages').style.display = hasSnapshot ? 'none' : '';
+  document.getElementById('fg-updateSnapshotInfo').style.display = hasSnapshot ? '' : 'none';
+  if (hasSnapshot) document.getElementById('g-updateSnapshotInfo').textContent = snapshotLabel;
+
   // Populate alert ID dropdown with this device's recent alerts
   refreshAlertIdDropdown();
 }

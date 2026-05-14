@@ -38,6 +38,14 @@ app = Flask(__name__)
 
 DEVICE_STATUSES = ["Active", "Error", "Out of Service"]
 DIRECTIONS = ["Northbound", "Eastbound", "Southbound", "Westbound", "Innerloop", "Outerloop"]
+SNAPSHOT_BASE = "http://10.48.0.106/images/wwd/snapshots"
+
+
+def snapshot_urls(snapshot_set: int, num_snapshots: int) -> list[str]:
+    return [
+        f"{SNAPSHOT_BASE}/{snapshot_set:03d}/snapshot_{i:03d}.jpg"
+        for i in range(num_snapshots)
+    ]
 
 # ─── Persistence ─────────────────────────────────────────────────────────────
 
@@ -263,6 +271,7 @@ def api_add_device():
     with devices_lock:
         if did in devices:
             return jsonify({"error": f"Device '{did}' already exists"}), 409
+        snap_set = data.get("snapshotSet")
         dev = {
             "deviceId": did,
             "name": (data.get("name") or did).strip(),
@@ -270,6 +279,8 @@ def api_add_device():
             "roadway": (data.get("roadway") or "").strip(),
             "direction": (data.get("direction") or "").strip(),
             "ipAddress": (data.get("ipAddress") or "127.0.0.1").strip(),
+            "snapshotSet": int(snap_set) if snap_set else None,
+            "numSnapshots": int(data.get("numSnapshots") or 1) if snap_set else None,
         }
         devices[did] = dev
     save_devices()
@@ -286,6 +297,10 @@ def api_update_device(did):
         for key in ("name", "deviceStatus", "roadway", "direction", "ipAddress"):
             if key in data:
                 dev[key] = (data[key] or "").strip() if key != "deviceStatus" else data[key]
+        if "snapshotSet" in data:
+            snap_set = data["snapshotSet"]
+            dev["snapshotSet"] = int(snap_set) if snap_set else None
+            dev["numSnapshots"] = int(data.get("numSnapshots") or 1) if snap_set else None
     save_devices()
     return jsonify(dev)
 
@@ -313,10 +328,13 @@ def api_generate_alert(did):
     body = request.get_json(force=True) or {}
     alert_id = str(uuid.uuid4())
     ts = iso_now()
-    num_images = int(body.get("numImages", random.randint(1, 3)))
-    num_images = max(0, min(10, num_images))
-    ip = dev["ipAddress"]
-    images = [f"http://{ip}/images/{alert_id}/frame{i+1:02d}.jpg" for i in range(num_images)]
+
+    if dev.get("snapshotSet"):
+        images = snapshot_urls(dev["snapshotSet"], dev["numSnapshots"])
+    else:
+        num_images = int(body.get("numImages", random.randint(1, 3)))
+        num_images = max(0, min(10, num_images))
+        images = [f"http://{dev['ipAddress']}/images/{alert_id}/frame{i+1:02d}.jpg" for i in range(num_images)]
 
     roadway = (body.get("roadway") or dev.get("roadway") or "").strip()
     direction = (body.get("direction") or dev.get("direction") or "").strip()
@@ -357,10 +375,13 @@ def api_generate_update(did):
         return jsonify({"error": "alertId is required"}), 400
 
     ts = iso_now()
-    num_images = int(body.get("numImages", random.randint(1, 3)))
-    num_images = max(1, min(10, num_images))
-    ip = dev["ipAddress"]
-    images = [f"http://{ip}/images/{alert_id}/update_{i+1:02d}.jpg" for i in range(num_images)]
+
+    if dev.get("snapshotSet"):
+        images = snapshot_urls(dev["snapshotSet"], dev["numSnapshots"])
+    else:
+        num_images = int(body.get("numImages", random.randint(1, 3)))
+        num_images = max(1, min(10, num_images))
+        images = [f"http://{dev['ipAddress']}/images/{alert_id}/update_{i+1:02d}.jpg" for i in range(num_images)]
 
     update_data = {
         "alertId": alert_id,
