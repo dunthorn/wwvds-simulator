@@ -38,35 +38,35 @@ app = Flask(__name__)
 
 DEVICE_STATUSES = ["Active", "Error", "Out of Service"]
 DIRECTIONS = ["Northbound", "Eastbound", "Southbound", "Westbound", "Innerloop", "Outerloop"]
-SNAPSHOT_BASE = "http://10.48.0.106/images/wwd/snapshots"
-
-
 def snapshot_urls(snapshot_set: int, num_snapshots: int) -> list[str]:
+    base = settings.get("snapshotBaseUrl", "").rstrip("/")
     return [
-        f"{SNAPSHOT_BASE}/{snapshot_set:03d}/snapshot_{i:03d}.jpg"
+        f"{base}/{snapshot_set:03d}/snapshot_{i:03d}.jpg"
         for i in range(num_snapshots)
     ]
 
 # ─── Persistence ─────────────────────────────────────────────────────────────
 
-DEVICES_FILE = os.path.join(os.path.dirname(__file__), "devices.json")
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 
 
-def save_devices() -> None:
-    with open(DEVICES_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(devices.values()), f, indent=2)
+def save_config() -> None:
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump({"devices": list(devices.values()), "settings": settings}, f, indent=2)
 
 
-def load_devices() -> None:
-    if not os.path.exists(DEVICES_FILE):
+def load_config() -> None:
+    if not os.path.exists(CONFIG_FILE):
         return
     try:
-        with open(DEVICES_FILE, encoding="utf-8") as f:
-            for dev in json.load(f):
-                devices[dev["deviceId"]] = dev
-        print(f"Loaded {len(devices)} device(s) from {DEVICES_FILE}")
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        for dev in data.get("devices", []):
+            devices[dev["deviceId"]] = dev
+        settings.update(data.get("settings", {}))
+        print(f"Loaded {len(devices)} device(s) from {CONFIG_FILE}")
     except Exception as exc:
-        print(f"Warning: could not load {DEVICES_FILE}: {exc}")
+        print(f"Warning: could not load {CONFIG_FILE}: {exc}")
 
 
 # ─── In-memory state ──────────────────────────────────────────────────────────
@@ -74,7 +74,11 @@ def load_devices() -> None:
 devices: dict[str, dict] = {}
 event_log: list[dict] = []
 sse_queues: list[queue.Queue] = []
-settings: dict = {"sunguideUrl": "", "forwardToSunguide": False}
+settings: dict = {
+    "sunguideUrl": "",
+    "forwardToSunguide": False,
+    "snapshotBaseUrl": "http://10.48.0.106/images/wwd/snapshots",
+}
 
 devices_lock = threading.Lock()
 log_lock = threading.Lock()
@@ -283,7 +287,7 @@ def api_add_device():
             "numSnapshots": int(data.get("numSnapshots") or 1) if snap_set else None,
         }
         devices[did] = dev
-    save_devices()
+    save_config()
     return jsonify(dev), 201
 
 
@@ -301,7 +305,7 @@ def api_update_device(did):
             snap_set = data["snapshotSet"]
             dev["snapshotSet"] = int(snap_set) if snap_set else None
             dev["numSnapshots"] = int(data.get("numSnapshots") or 1) if snap_set else None
-    save_devices()
+    save_config()
     return jsonify(dev)
 
 
@@ -311,7 +315,7 @@ def api_delete_device(did):
         if did not in devices:
             return jsonify({"error": "Device not found"}), 404
         del devices[did]
-    save_devices()
+    save_config()
     return "", 204
 
 
@@ -430,6 +434,8 @@ def api_save_settings():
     data = request.get_json(force=True)
     settings["sunguideUrl"] = (data.get("sunguideUrl") or "").strip()
     settings["forwardToSunguide"] = bool(data.get("forwardToSunguide", False))
+    settings["snapshotBaseUrl"] = (data.get("snapshotBaseUrl") or "").strip()
+    save_config()
     return jsonify(settings)
 
 
@@ -478,7 +484,7 @@ def index():
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    load_devices()
+    load_config()
     print("WWVDS SunGuide Protocol Simulator")
     print("  Web UI:         http://localhost:5000/")
     print("  Status API:     GET  http://localhost:5000/v1/status?DeviceId=<id>")
