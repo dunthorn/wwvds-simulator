@@ -77,7 +77,7 @@ sse_queues: list[queue.Queue] = []
 settings: dict = {
     "sunguideUrl": "",
     "forwardToSunguide": False,
-    "snapshotBaseUrl": "http://10.48.0.106/images/wwd/snapshots",
+    "snapshotBaseUrl": "",
 }
 
 devices_lock = threading.Lock()
